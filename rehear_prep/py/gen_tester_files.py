@@ -29,7 +29,41 @@ MIDI_MAX_CTL_VALUE = 127
         }
 """
 
-def gen_note_list( arg ):
+def gen_overlapping_note_list( arg ):
+
+    spb   = 60.0 / arg.bpm
+    noteL = []
+    noteN = int(arg.dur_sec / spb)
+    pitch = arg.min_pitch
+    dyn   = arg.min_dyn
+    
+    
+    for i in range(noteN):
+        sec     = i * spb
+
+        if sec > arg.dur_sec:
+            break;
+
+        dur_sec = arg.dur_sec - sec
+        
+        if sec + dur_sec > arg.dur_sec:
+            break
+        
+        
+        noteL.append( types.SimpleNamespace(**dict(sec=sec, pitch=pitch, dyn=dyn, dur_sec=dur_sec)))
+
+        pitch += 1
+        if pitch > arg.max_pitch:
+            pitch = arg.min_pitch
+
+        dyn += 1
+        if dyn > arg.max_dyn:
+            dyn = arg.min_dyn
+
+    return noteL
+    
+
+def gen_sequential_note_list( arg ):
     
     spb   = 60.0 / arg.bpm
     noteL = []
@@ -53,9 +87,8 @@ def gen_note_list( arg ):
     return noteL
         
 
-def gen_mp_section( arg ):
+def gen_mp_section( arg, noteL ):
 
-    noteL = gen_note_list(arg)    
     msgL  = []
     uid   = 0
     
@@ -164,8 +197,8 @@ def write_preset_file( arg, preset_json_fname, scoreL ):
 
     # form the fragL[]
     for frag_id,beg_loc in enumerate(locL):
-        fragL.append( dict( frag_id=frag_id,
-                            end_loc=beg_loc + (arg.preset_loc_delta-1),
+        fragL.append( dict( fragId=frag_id,
+                            endLoc=beg_loc + (arg.preset_loc_delta-1),
                             inGain=1.0,
                             outGain=1.0,
                             wetDryGain=0.5,
@@ -190,14 +223,15 @@ def write_preset_file( arg, preset_json_fname, scoreL ):
     # write the file
     with open(preset_json_fname,"w") as f:
         json.dump(fragD,f,indent=2)
-        
 
-if __name__ == "__main__":
-
+def gen_section_based_test_files():
+    # Generate the score, multi-player and preset file for 3 sections.
+    # 
     multi_player_json_fname  = "multi_player.json"
     score_csv_fname_prefix   = "score"
     preset_json_fname_prefix = "preset"
 
+    
     paramL = [
         dict(label="section_a", section_id=1000, piano_id=0, player_id=0),
         dict(label="section_b", section_id=2000, piano_id=1, player_id=1),
@@ -215,7 +249,7 @@ if __name__ == "__main__":
         dur_sec   = 60,
         bpm       = 60,        
         min_pitch = 21,
-        max_pitch = 108,
+        max_pitch = 107,
         min_dyn   = 1,
         max_dyn   = 24,
         notes_per_meas  = 4,
@@ -224,26 +258,88 @@ if __name__ == "__main__":
     )
 
     mpSectL = []
-    
+
+    # for each section
     for i,paramD in enumerate(paramL):
-        
+
+        # apply the parameters to arg.
         for k,v in paramD.items():
             argD[k] = v
 
         arg     = types.SimpleNamespace(**argD)
 
-        mpSectD = gen_mp_section(arg)
+        # Generate the note list for this section
+        noteL = gen_sequential_note_list(arg)    
+
+        # Generate the multi-play section data
+        mpSectD = gen_mp_section(arg, noteL)
         
-        mpSectL.append(mpSectD)
-        
+        # Write the score for this section
         scoreL  = gen_score(arg,mpSectD)
         score_csv_fname = f"{score_csv_fname_prefix}{i}.csv"
         write_score_file( score_csv_fname, scoreL )
 
+        # Write the preset for this section
         preset_json_fname = f"{preset_json_fname_prefix}{i}.json"
         write_preset_file( arg, preset_json_fname, scoreL )
-    
+
+        # store the section data for use by the mulit-play generator
+        mpSectL.append(mpSectD)
 
     write_mp_file( multi_player_json_fname, mpSectL )
 
+def gen_overlapping_note_test():
+
+    multi_player_json_fname  = "multi_player.json"
+    score_csv_fname   = "score.csv"
+    preset_json_fname = "preset.json"
     
+    paramD = dict(label="section_a", section_id=1000, piano_id=0, player_id=0)
+        
+    argD = dict(
+        label     = None,
+        section_id = None,
+        piano_id  = None,
+        player_id = None,
+        pedal_fl  = False,
+        port_id   = 0,
+        dur_sec   = 60,
+        bpm       = 120,        
+        min_pitch = 21,
+        max_pitch = 108,
+        min_dyn   = 1,
+        max_dyn   = 24,
+        notes_per_meas  = 4,
+
+        preset_loc_delta = 10
+    )
+
+    # apply the parameters to arg.
+    for k,v in paramD.items():
+        argD[k] = v
+
+    arg = types.SimpleNamespace(**argD)
+        
+    # Generate the note list for this section
+    noteL = gen_overlapping_note_list(arg)    
+
+    # Generate the multi-play section data
+    mpSectD = gen_mp_section(arg, noteL)
+
+    # Write the score file
+    scoreL  = gen_score(arg,mpSectD)
+    write_score_file( score_csv_fname, scoreL )
+
+    # Write the preset file
+    write_preset_file( arg, preset_json_fname, scoreL )
+    
+    # Write the mp-player file
+    write_mp_file( multi_player_json_fname, [mpSectD] )
+
+    
+
+if __name__ == "__main__":
+
+    # gen_section_based_test_files()
+
+    gen_overlapping_note_test()
